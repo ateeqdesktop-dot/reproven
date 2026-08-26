@@ -1,0 +1,17 @@
+schema_version: '1'
+artifact:
+  path: artifact.txt
+  sha256: 991039fcfebcba72272c5ead3c64285848fb6baebbd18a505e1cb61dfe121a6e
+  kind: file
+source:
+  path: source.txt
+build:
+  command: [python, -c, "from pathlib import Path; Path('artifact.txt').write_text('stable artifact'+chr(10))"]
+  cwd: .
+  timeout_seconds: 10
+  network: false
+  isolation: local
+policy:
+  require_provenance: false
+  require_isolation: false
+  allow_network: false

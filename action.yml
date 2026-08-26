@@ -1,0 +1,34 @@
+name: ReProven verification
+description: Verify that a release artifact can be reproduced from its declared source and build recipe.
+inputs:
+  manifest:
+    description: Path to a ReProven manifest
+    required: true
+  workspace:
+    description: Workspace used for verification
+    required: false
+    default: .
+  fail-on:
+    description: Comma-separated verdicts that fail the action
+    required: false
+    default: mismatch,not_reproducible,invalid_manifest
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p reproven-results
+        set +e
+        reproven verify "${{ inputs.manifest }}" --workspace "${{ inputs.workspace }}" --format json --output reproven-results/evidence.json
+        status=$?
+        set -e
+        reproven verify "${{ inputs.manifest }}" --workspace "${{ inputs.workspace }}" --format sarif --output reproven-results/reproven.sarif || true
+        reproven verify "${{ inputs.manifest }}" --workspace "${{ inputs.workspace }}" --format junit --output reproven-results/reproven.xml || true
+        echo "ReProven exit code: ${status}"
+        if [ "${status}" -ne 0 ]; then exit "${status}"; fi
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: reproven-evidence
+        path: reproven-results

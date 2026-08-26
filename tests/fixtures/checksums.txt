@@ -1,0 +1,3 @@
+991039fcfebcba72272c5ead3c64285848fb6baebbd18a505e1cb61dfe121a6e  tests/fixtures/reproduced/artifact.txt
+e314751cffd69fbe00611fcea3b74c250aefb3e2e46f6b5e37116e4a579f699d  tests/fixtures/mismatch/artifact.txt
+b8bb034f9b63bd0254fbc7c157cae746c75853f4643d6cea844dc48ddb57f522  tests/fixtures/reproduced/source.txt

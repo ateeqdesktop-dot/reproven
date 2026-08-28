@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 from reproven.builders.local import run_local
 from reproven.domain.models import Evidence, Manifest, ReasonCode, Verdict
 from reproven.domain.utils import safe_path, sha256_file
+from reproven.evidence import seal_evidence
+
+
+def _evidence(**kwargs: Any) -> Evidence:
+    return seal_evidence(Evidence(**kwargs))
 
 
 def verify(manifest: Manifest, manifest_sha256: str, workspace: Path) -> Evidence:
@@ -18,33 +24,25 @@ def verify(manifest: Manifest, manifest_sha256: str, workspace: Path) -> Evidenc
     execution = None
 
     if not source_path.exists():
-        return Evidence(
-            run_id=run_id,
-            verdict=Verdict.NOT_REPRODUCIBLE,
-            reason_codes=[ReasonCode.SOURCE_MISSING],
-            manifest_sha256=manifest_sha256,
+        return _evidence(
+            run_id=run_id, verdict=Verdict.NOT_REPRODUCIBLE,
+            reason_codes=[ReasonCode.SOURCE_MISSING], manifest_sha256=manifest_sha256,
             expected_sha256=manifest.artifact.sha256,
+            metadata={"workspace": str(workspace), "artifact_kind": manifest.artifact.kind},
         )
     source_digest = sha256_file(source_path) if source_path.is_file() else None
 
     if manifest.policy.require_isolation and manifest.build.isolation != "container":
-        reasons.append(ReasonCode.OPTIONAL_CHECK_SKIPPED)
-        return Evidence(
-            run_id=run_id,
-            verdict=Verdict.INCONCLUSIVE,
-            reason_codes=reasons,
-            manifest_sha256=manifest_sha256,
-            expected_sha256=manifest.artifact.sha256,
-            source_sha256=source_digest,
+        return _evidence(
+            run_id=run_id, verdict=Verdict.INCONCLUSIVE,
+            reason_codes=[ReasonCode.OPTIONAL_CHECK_SKIPPED], manifest_sha256=manifest_sha256,
+            expected_sha256=manifest.artifact.sha256, source_sha256=source_digest,
         )
     if manifest.build.network and not manifest.policy.allow_network:
-        return Evidence(
-            run_id=run_id,
-            verdict=Verdict.INVALID_MANIFEST,
-            reason_codes=[ReasonCode.INVALID_COMMAND],
-            manifest_sha256=manifest_sha256,
-            expected_sha256=manifest.artifact.sha256,
-            source_sha256=source_digest,
+        return _evidence(
+            run_id=run_id, verdict=Verdict.INVALID_MANIFEST,
+            reason_codes=[ReasonCode.INVALID_COMMAND], manifest_sha256=manifest_sha256,
+            expected_sha256=manifest.artifact.sha256, source_sha256=source_digest,
         )
 
     execution = run_local(manifest.build, workspace, manifest.policy.max_output_bytes)
@@ -54,9 +52,12 @@ def verify(manifest: Manifest, manifest_sha256: str, workspace: Path) -> Evidenc
     elif execution.timed_out:
         verdict = Verdict.NOT_REPRODUCIBLE
         reasons.append(ReasonCode.BUILD_TIMEOUT)
-    elif execution.returncode != 0 or not artifact_path.exists() or not artifact_path.is_file():
+    elif execution.returncode != 0:
         verdict = Verdict.NOT_REPRODUCIBLE
         reasons.append(ReasonCode.BUILD_FAILED)
+    elif not artifact_path.exists() or not artifact_path.is_file():
+        verdict = Verdict.NOT_REPRODUCIBLE
+        reasons.append(ReasonCode.ARTIFACT_MISSING)
     else:
         actual_digest = sha256_file(artifact_path)
         if actual_digest == manifest.artifact.sha256:
@@ -69,16 +70,10 @@ def verify(manifest: Manifest, manifest_sha256: str, workspace: Path) -> Evidenc
     if manifest.policy.require_provenance and manifest.provenance is None:
         verdict = Verdict.INCONCLUSIVE
         reasons.append(ReasonCode.PROVENANCE_MISMATCH)
-
-    return Evidence(
-        run_id=run_id,
-        verdict=verdict,
-        reason_codes=reasons,
-        manifest_sha256=manifest_sha256,
-        expected_sha256=manifest.artifact.sha256,
-        actual_sha256=actual_digest,
-        source_sha256=source_digest,
-        execution=execution,
+    return _evidence(
+        run_id=run_id, verdict=verdict, reason_codes=reasons,
+        manifest_sha256=manifest_sha256, expected_sha256=manifest.artifact.sha256,
+        actual_sha256=actual_digest, source_sha256=source_digest, execution=execution,
         provenance=manifest.provenance,
         metadata={"workspace": str(workspace), "artifact_kind": manifest.artifact.kind},
     )

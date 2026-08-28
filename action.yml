@@ -15,7 +15,11 @@ inputs:
 runs:
   using: composite
   steps:
-    - shell: bash
+    - name: Install ReProven
+      shell: bash
+      run: python -m pip install --disable-pip-version-check "${{ github.action_path }}"
+    - name: Verify and publish evidence
+      shell: bash
       run: |
         set -euo pipefail
         mkdir -p reproven-results
@@ -25,8 +29,13 @@ runs:
         set -e
         reproven verify "${{ inputs.manifest }}" --workspace "${{ inputs.workspace }}" --format sarif --output reproven-results/reproven.sarif || true
         reproven verify "${{ inputs.manifest }}" --workspace "${{ inputs.workspace }}" --format junit --output reproven-results/reproven.xml || true
+        reproven verify-evidence reproven-results/evidence.json > reproven-results/evidence-verification.json || true
         echo "ReProven exit code: ${status}"
         if [ "${status}" -ne 0 ]; then exit "${status}"; fi
+    - uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      with:
+        sarif_file: reproven-results/reproven.sarif
     - uses: actions/upload-artifact@v4
       if: always()
       with:

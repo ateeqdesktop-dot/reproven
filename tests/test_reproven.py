@@ -98,3 +98,46 @@ def test_cli_invalid_manifest(tmp_path: Path) -> None:
     bad = tmp_path / "bad.yaml"
     bad.write_text("not: a manifest\n")
     assert main(["verify", str(bad), "--workspace", str(tmp_path)]) == 20
+
+
+
+def test_evidence_is_sealed_and_can_be_verified(tmp_path: Path) -> None:
+    (tmp_path / "source.txt").write_text("source\n")
+    expected = hashlib.sha256(b"stable artifact\n").hexdigest()
+    manifest, manifest_sha = load_manifest(make_manifest(tmp_path, expected))
+    evidence = verify(manifest, manifest_sha, tmp_path)
+    assert evidence.evidence_sha256
+    evidence_path = tmp_path / "evidence.json"
+    evidence_path.write_text(to_json(evidence), encoding="utf-8")
+    assert main(["verify-evidence", str(evidence_path)]) == 0
+    assert main(["inspect", str(evidence_path)]) == 0
+
+
+def test_tampered_evidence_is_rejected(tmp_path: Path) -> None:
+    (tmp_path / "source.txt").write_text("source\n")
+    expected = hashlib.sha256(b"stable artifact\n").hexdigest()
+    manifest, manifest_sha = load_manifest(make_manifest(tmp_path, expected))
+    evidence = verify(manifest, manifest_sha, tmp_path)
+    payload = evidence.model_dump(mode="json")
+    payload["verdict"] = "mismatch"
+    path = tmp_path / "tampered.json"
+    import json
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    assert main(["verify-evidence", str(path)]) == 21
+
+
+def test_missing_artifact_is_distinct_from_build_failure(tmp_path: Path) -> None:
+    (tmp_path / "source.txt").write_text("source\n")
+    expected = hashlib.sha256(b"stable artifact\n").hexdigest()
+    path = make_manifest(tmp_path, expected)
+    path.write_text(path.read_text().replace("Path('artifact.txt').write_text('stable artifact'+chr(10))", "pass"), encoding="utf-8")
+    manifest, manifest_sha = load_manifest(path)
+    evidence = verify(manifest, manifest_sha, tmp_path)
+    assert evidence.reason_codes[0].value == "artifact_missing"
+
+
+def test_invalid_evidence_json_and_missing_file(tmp_path: Path) -> None:
+    bad = tmp_path / "bad.json"
+    bad.write_text("[]", encoding="utf-8")
+    assert main(["verify-evidence", str(bad)]) == 21
+    assert main(["verify-evidence", str(tmp_path / "missing.json")]) == 20

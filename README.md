@@ -1,12 +1,23 @@
 # ReProven
 
-**Local-first, explainable release reproducibility verification.**
+> **Independent proof that a release is what its source says it is.**
 
-ReProven helps maintainers and consumers answer a concrete question: *can this released artifact be reproduced from the declared source and build recipe?* It turns the answer into a deterministic verdict, reason codes, and CI-friendly evidence instead of an opaque pass/fail signal.
+ReProven is a local-first, explainable verifier for software release reproducibility. It independently runs a declared build recipe, hashes the resulting artifact, compares it with the release digest, and emits a portable evidence capsule that a maintainer, reviewer, or downstream consumer can verify later without rebuilding or trusting a hosted dashboard.
 
-## Why ReProven?
+## The problem
 
-Provenance explains how an artifact claims to have been built. ReProven independently runs the declared build, hashes the result, and distinguishes `reproduced`, `mismatch`, `not_reproducible`, `inconclusive`, and `invalid_manifest`. It is intentionally local-first and does not require an account, hosted service, model call, or hidden upload.
+A signed artifact can prove who signed it. Provenance can describe how a builder claims to have produced it. An SBOM can describe what is inside it. None of those claims alone answers the practical maintainer question: **does this exact downloadable artifact match the source and build recipe that were reviewed?** ReProven closes that loop with an explicit, fail-closed comparison.
+
+## What makes it different
+
+| Property | ReProven behavior |
+|---|---|
+| Local-first | No account, hosted service, model call, database, or hidden upload is required. |
+| Deterministic | Versioned manifests, argv-only commands, canonical JSON, SHA-256 digests, stable reason codes. |
+| Explainable | A verdict includes the expected/observed digest, source digest, bounded execution result, and machine-readable reasons. |
+| CI-native | JSON, Markdown, SARIF, JUnit, exit codes, and a composite GitHub Action are included. |
+| Fail-closed | Unsafe paths, disallowed network, missing isolation, missing artifacts, and malformed manifests cannot silently become success. |
+| Portable | Evidence can be inspected and verified offline after the original build has finished. |
 
 ## Five-minute demo
 
@@ -14,10 +25,18 @@ Provenance explains how an artifact claims to have been built. ReProven independ
 python -m venv .venv
 . .venv/bin/activate
 pip install -e '.[dev]'
-reproven verify examples/reproduced/manifest.yaml --workspace examples/reproduced --format markdown
+reproven verify examples/reproduced/manifest.yaml \
+  --workspace examples/reproduced \
+  --format markdown
 ```
 
-A successful run returns exit code `0`. A digest mismatch returns `10`, an unsuccessful build returns `11`, an inconclusive verification returns `12`, and invalid input returns `20`.
+A successful run returns exit code `0`. A digest mismatch returns `10`, a failed or timed-out build returns `11`, an inconclusive verification returns `12`, invalid input returns `20`, and invalid/tampered evidence returns `21`.
+
+To verify an evidence capsule without executing a build:
+
+```bash
+reproven verify-evidence reproven-results/evidence.json
+```
 
 ## Manifest
 
@@ -41,22 +60,50 @@ policy:
   allow_network: false
 ```
 
-The canonical command form is an argv array. ReProven never evaluates it through a shell. Network access is denied by policy unless explicitly allowed, and requested container isolation is never silently downgraded.
+Commands are argv arrays and never pass through a shell. Workspace-relative paths are resolved and checked for escape. Network access is denied unless both the build and policy explicitly allow it. A requested container isolation mode is not silently downgraded.
+
+## GitHub Action
+
+```yaml
+- name: Verify release reproducibility
+  uses: ateeqdesktop-dot/reproven@main
+  with:
+    manifest: .reproven/release.yaml
+    workspace: .
+```
+
+The action writes JSON evidence, SARIF, and JUnit artifacts to `reproven-results/`, then uploads them for review. Pin a release tag or commit SHA in production workflows.
 
 ## Architecture
 
-The domain layer owns immutable models, verdict semantics, and reason codes. Adapters handle manifests, source resolution, build execution, artifact inspection, provenance, comparison, evidence, and reports. This keeps the core library testable with fakes and makes ecosystem adapters additive.
+The system is divided into a typed domain layer, manifest and path resolution, a bounded local runner, artifact inspection, evidence sealing, reporting, and CI integration. The core verdict is independent of presentation formats. See [`docs/architecture.md`](docs/architecture.md) and [`docs/adr-001-core-boundaries.md`](docs/adr-001-core-boundaries.md).
 
-## Status
+## Security boundary
 
-The current MVP implements strict manifests, local execution, exact digest verification, deterministic JSON evidence, Markdown/SARIF/JUnit reports, path defense, bounded output, and a tested CLI. Container execution, package-specific inspectors, signatures, and richer provenance adapters are planned as incremental extensions rather than hidden claims in the MVP.
+ReProven is a policy-aware verifier, not a complete hostile-build sandbox. Local execution is appropriate for trusted or reviewable recipes. For untrusted builds, use the planned container/external-sandbox adapter and treat `isolation: local` as insufficient. ReProven never claims that reproducibility proves the producer is trustworthy, that dependencies are safe, or that an artifact contains no vulnerability.
+
+Please report vulnerabilities privately according to [`SECURITY.md`](SECURITY.md).
 
 ## Development
 
 ```bash
+pip install -e '.[dev]'
 pytest
 ruff check .
 mypy src
+python -m build
 ```
 
-ReProven is released under the Apache-2.0 license. Contributions are welcome through issues and pull requests; see `CONTRIBUTING.md` and `SECURITY.md`.
+The test suite includes fixture-based reproduced and mismatch cases, path traversal defenses, malformed manifests, command failures, missing artifacts, evidence tampering, and evidence-only verification. The project targets Python 3.11+ and is released under Apache-2.0.
+
+## Roadmap
+
+The next releases will add container-backed execution with explicit runtime guarantees, SLSA/in-toto provenance adapters, Sigstore verification hooks, reproducibility-drift diagnostics, and ecosystem inspectors for Python wheels, npm tarballs, Cargo packages, Go modules, and OCI images. A remote rebuild quorum and transparency-log integration are intentionally optional layers rather than dependencies of the local core.
+
+## Contributing
+
+Contributions are welcome. Start with [`CONTRIBUTING.md`](CONTRIBUTING.md), reproduce the behavior with a fixture, add a regression test, and keep security assumptions explicit in documentation and release notes.
+
+## License
+
+Apache-2.0. Copyright © 2026 ReProven Contributors.

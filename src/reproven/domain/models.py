@@ -25,6 +25,9 @@ class ReasonCode(str, Enum):
     INVALID_PATH = "invalid_path"
     INVALID_COMMAND = "invalid_command"
     OPTIONAL_CHECK_SKIPPED = "optional_check_skipped"
+    ARTIFACT_MISSING = "artifact_missing"
+    EVIDENCE_VERIFIED = "evidence_verified"
+    EVIDENCE_TAMPERED = "evidence_tampered"
 
 
 class ArtifactSpec(BaseModel):
@@ -80,6 +83,7 @@ class ExecutionResult(BaseModel):
 class Evidence(BaseModel):
     model_config = ConfigDict(extra="forbid")
     schema_version: str = "1"
+    verifier_version: str = "0.2.0"
     run_id: str
     verdict: Verdict
     reason_codes: list[ReasonCode]
@@ -87,6 +91,7 @@ class Evidence(BaseModel):
     expected_sha256: str
     actual_sha256: str | None = None
     source_sha256: str | None = None
+    evidence_sha256: str | None = None
     execution: ExecutionResult | None = None
     provenance: dict[str, Any] | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)

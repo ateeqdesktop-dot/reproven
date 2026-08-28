@@ -24,7 +24,7 @@ def to_markdown(evidence: Evidence) -> str:
 def to_sarif(evidence: Evidence) -> str:
     level = "note" if evidence.verdict == Verdict.REPRODUCED else "error"
     result = {"ruleId": "reproven/verdict", "level": level, "message": {"text": evidence.verdict.value}}
-    payload = {"version": "2.1.0", "$schema": "https://json.schemastore.org/sarif-2.1.0.json", "runs": [{"tool": {"driver": {"name": "ReProven", "version": "0.1.0"}}, "results": [result]}]}
+    payload = {"version": "2.1.0", "$schema": "https://json.schemastore.org/sarif-2.1.0.json", "runs": [{"tool": {"driver": {"name": "ReProven", "version": "0.2.0"}}, "results": [result]}]}
     return json.dumps(payload, sort_keys=True, indent=2) + "\n"
 
 

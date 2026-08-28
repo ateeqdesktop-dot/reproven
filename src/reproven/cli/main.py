@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from reproven.domain.models import Verdict
+from reproven.evidence import load_and_verify
 from reproven.manifest.loader import ManifestError, load_manifest
 from reproven.reports import to_json, to_junit, to_markdown, to_sarif
 from reproven.verify import verify
@@ -35,18 +36,28 @@ def main(argv: list[str] | None = None) -> int:
     verify_parser.add_argument("--workspace", type=Path, default=Path.cwd())
     verify_parser.add_argument("--format", choices=["json", "markdown", "sarif", "junit"], default="markdown")
     verify_parser.add_argument("--output", type=Path)
-    inspect_parser = sub.add_parser("inspect", help="inspect an evidence JSON file")
+    evidence_parser = sub.add_parser("verify-evidence", help="verify an evidence capsule without rebuilding")
+    evidence_parser.add_argument("evidence", type=Path)
+    inspect_parser = sub.add_parser("inspect", help="summarize an evidence JSON file")
     inspect_parser.add_argument("evidence", type=Path)
     args = parser.parse_args(argv)
 
-    if args.command == "inspect":
+    if args.command in {"inspect", "verify-evidence"}:
         try:
-            payload = json.loads(args.evidence.read_text(encoding="utf-8"))
-            print(json.dumps({"verdict": payload.get("verdict"), "reason_codes": payload.get("reason_codes", []), "run_id": payload.get("run_id")}, indent=2))
-            return 0
-        except (OSError, json.JSONDecodeError) as exc:
-            print(f"reproven: cannot inspect evidence: {exc}", file=sys.stderr)
+            ok, evidence, detail = load_and_verify(args.evidence.read_text(encoding="utf-8"))
+        except OSError as exc:
+            print(f"reproven: cannot read evidence: {exc}", file=sys.stderr)
             return 20
+        if not ok or evidence is None:
+            print(f"reproven: evidence verification failed: {detail}", file=sys.stderr)
+            return 21
+        if args.command == "verify-evidence":
+            print(json.dumps({"verified": True, "fingerprint": detail, "run_id": evidence.run_id}, indent=2))
+        else:
+            print(json.dumps({"verified": True, "verdict": evidence.verdict.value,
+                              "reason_codes": [r.value for r in evidence.reason_codes],
+                              "run_id": evidence.run_id, "fingerprint": detail}, indent=2))
+        return 0
 
     try:
         manifest, manifest_sha = load_manifest(args.manifest)
@@ -57,7 +68,6 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, ValueError) as exc:
         print(f"reproven: verification error: {exc}", file=sys.stderr)
         return 30
-
     rendered = {"json": to_json, "markdown": to_markdown, "sarif": to_sarif, "junit": to_junit}[args.format](evidence)
     _write_output(rendered, args.output)
     return _EXIT_CODES[evidence.verdict]
